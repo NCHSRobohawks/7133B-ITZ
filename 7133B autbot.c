@@ -1,7 +1,7 @@
 #pragma config(I2C_Usage, I2C1, i2cSensors)
 #pragma config(Sensor, in1,    mobile1,        sensorPotentiometer)
 #pragma config(Sensor, in2,    mobile2,        sensorPotentiometer)
-#pragma config(Sensor, dgtl1,  elevator,       sensorQuadEncoder)
+#pragma config(Sensor, dgtl1,  bar,            sensorQuadEncoder)
 #pragma config(Sensor, dgtl6,  solenoid,       sensorDigitalOut)
 #pragma config(Sensor, I2C_1,  ,               sensorQuadEncoderOnI2CPort,    , AutoAssign )
 #pragma config(Sensor, I2C_2,  ,               sensorQuadEncoderOnI2CPort,    , AutoAssign )
@@ -24,8 +24,9 @@ int hl=0;
 int sl=0;
 int ll=0
 bool lower = False;
-long error[2] = {0, 0};
-    long i[2] = {0,0};
+long error[3] = {0, 0, 0};
+    long i[3] = {0,0, 0};
+bool pid = false;
 
 task mobile_goal() {
 		while(True){
@@ -47,12 +48,33 @@ task mobile_goal() {
 }
 }
 
+task chain_bar() {
+	SensorValue[bar] = 0;
+	while(True){
+		if(!pid){
+			motor[bar1] = vexRt[Ch2];
+			motor[bar2] = vexRt[Ch2];
+  }
+
+    else{
+        error[2] = 110
+        + SensorValue(bar);
+        i[2] = abs(i[2] + error[2]) < 0 ? i[2] + error[2] : sgn(i[2] + error[2])*0;
+        motor[bar1] = error[2]*3 + i[2]*1;
+        motor[bar2] = error[2]*3 + i[2]*1;
+        wait1Msec(25);
+
+    }
+}
+}
+
 
 task main()
 {
 clearLCDLine(0);
 clearLCDLine(1);
 startTask(mobile_goal);
+startTask(chain_bar);
 while(true){
 
 		motor[lf] = reverse * (vexRT[Ch3] + reverse*(vexRt[Ch1]+ vexRT[Ch4]))/half;
@@ -65,8 +87,7 @@ while(true){
 		motor[lift1] = (127 * vexRt[Btn5U]) + (-127 * vexRT[Btn5D]);
 		motor[lift2] = (127 * vexRt[Btn5U]) + (-127 * vexRT[Btn5D]);
 
-		motor[bar1] = vexRt[Ch2];
-		motor[bar2] = vexRt[Ch2];
+
 
 		if(vexRT[Btn8D]!=rl && rl){
 			reverse *= -1;
@@ -82,7 +103,7 @@ while(true){
 		sl = vexRT[Btn8R];
 
 		if(vexRT[Btn8L]!=ll && ll){
-					lower = !lower;
+					pid = !pid;
 				}
 		ll = vexRT[Btn8L];
 		displayLCDString(1, 0, "Aut");
