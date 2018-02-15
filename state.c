@@ -1,6 +1,7 @@
 #pragma config(Sensor, in1,    liftL,          sensorPotentiometer)
-#pragma config(Sensor, in2,    liftR,          sensorPotentiometer)
-#pragma config(Sensor, in3,    manipulator,    sensorNone)
+#pragma config(Sensor, in2,    gyro,           sensorGyro)
+#pragma config(Sensor, in3,    liftR,          sensorPotentiometer)
+#pragma config(Sensor, in4,    manipulator,    sensorPotentiometer)
 #pragma config(Sensor, dgtl1,  L,              sensorQuadEncoder)
 #pragma config(Sensor, dgtl3,  R,              sensorQuadEncoder)
 #pragma config(Sensor, dgtl6,  ultrasonic,     sensorSONAR_inch)
@@ -47,7 +48,7 @@ float kD[4] = {0,0,0,0};
 
 
 void straighten(int target){
-	error[2] = target - SensorValue(in4);
+	error[2] = target - SensorValue(gyro);
 	I[2] += error[2];
 	if(error[2] > 50 || abs(error[2]) > 10){
 		I[2]  = 0;
@@ -76,7 +77,7 @@ void pd_base(int target, int degrees10){
 }
 
 void pid_turn(int target){
-	error[2] = target - SensorValue(in4);
+	error[2] = target - SensorValue(gyro);
 	I[2] += error[2];
 	if(error[2] > 35 || abs(error[2]) == 0){
 		I[2]  = 0;
@@ -88,9 +89,9 @@ void pid_turn(int target){
 
 
 
-void pid_lift(int target){
-	error[3] = SensorValue[liftL]- target;
-	error[4] = SensorValue[liftR]- target;
+void pid_lift(int targetL, int targetR){
+	error[3] = SensorValue[liftL]- targetL;
+	error[4] = SensorValue[liftR]- targetR;
 	I[3] += error[3];
 	if(abs(error[3]) > 200 || abs(error[3]) < 10){
 		I[3]  = 0;
@@ -144,10 +145,10 @@ void turn(int degrees10){
 	}
 }
 
-void lift_set(int target){
+void lift_set(int targetL, int targetR){
 	I[4] = 0;
-	while((Sensorvalue[liftR] - target) > 15){
-		pid_lift(target)
+	while((Sensorvalue[liftR] - targetR) > 15){
+		pid_lift(targetL, targetR)
 		wait1Msec(25);
 	}
 }
@@ -187,8 +188,9 @@ const unsigned short trueSpeed[128] =
 };
 int speedLeft;
 int speedRight;
+int speedManipulator;
 
-void setSpeed(){
+void driveSpeed(){
     if(speedLeft > 127) speedLeft = 127;
     if(speedLeft < -127) speedLeft = -127;
 		if(speedRight > 127) speedRight = 127;
@@ -199,20 +201,51 @@ void setSpeed(){
     motor[driveR] = absSpeedR;
 }
 
-task usercontrol()
-{
-  while (true)
-  {
-  	motor[liftL1] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
+void manipulator_speed(){
+    if(speedManipulator > 127) speedManipulator = 127;
+    if(speedManipulator < -127) speedManipulator = -127;
+		int absSpeed = trueSpeed[abs(speedManipulator)]*(speedManipulator/abs(speedManipulator+0.0001));
+    motor[manipulatorL] = absSpeed;
+    motor[manipulatorR] = absSpeed;
+}
+
+int manipulator_target;
+//Equation that constantly converts current lift value to potentiometer target for four bar
+task lift_to_manipulator(){
+	while(true){
+		manipulator_target = SensorValue(L);
+		wait1Msec(20);
+	}
+}
+
+//Task that handles all the advanced and basic lift/four bar control
+task lift_control(){
+	startTask(lift_to_manipulator);
+	while(true){
+		motor[liftL1] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
 		motor[liftL2] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
 		motor[liftR1] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
 		motor[liftR2] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
-		motor[mogo] = (vexRT[Btn5U] * 127) + (vexRT[Btn5D] * -127);
-		speedLeft = vexRT[Ch3] + vexRT[Ch4];
-		speedRight = vexRT[Ch3] -  vexRT[Ch4];
-		motor[manipulatorL] = vexRT[Ch2];
-		motor[manipulatorR] = vexRT[Ch2]
+		if(vexRT[Ch2] > 10){
+			speedManipulator= vexRT[Ch2];
+			manipulator_speed();
+		}
+		else if(vexRT[Btn8D]){
+			pid_manipulator(manipulator_target);
+		}
 		motor[rollers] = (vexRT[Btn7U] * 127) + (vexRT[Btn7D] * -157) + 30;
-		setSpeed();
+	}
+	}
+
+
+task usercontrol()
+{
+	startTask(lift_control);
+  while (true)
+  {
+		motor[mogo] = (vexRT[Btn5UXmtr2] * 147) + (vexRT[Btn5DXmtr2] * -127) - 20;
+		speedLeft = vexRT[Ch3Xmtr2] + vexRT[Ch4Xmtr2];
+		speedRight = vexRT[Ch3Xmtr2] -  vexRT[Ch4Xmtr2];
+		driveSpeed();
   }
 }
