@@ -32,12 +32,14 @@ const unsigned short trueSpeed[128] =
 	80, 81, 83, 84, 84, 86, 86, 87, 87, 88,
 	88, 89, 89, 90, 90,127,127,127
 };
+
 //LINEAR DRIVE VARIABLES
 int threshold = 10;
 int speedLeft;
 int speedRight;
 string rightDrive= "rightDrive";
 string leftDrive = "leftDrive";
+
 //SETSPEED FUNCTION
 void setSpeed(){
     if(speedLeft > 127) speedLeft = 127;

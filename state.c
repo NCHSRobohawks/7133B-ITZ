@@ -1,4 +1,6 @@
-#pragma config(Sensor, in1,    liftL,          sensorPotentiometer)
+#pragma config(UART_Usage, UART1, uartVEXLCD, baudRate19200, IOPins, None, None)
+#pragma config(UART_Usage, UART2, uartNotUsed, baudRate4800, IOPins, None, None)
+#pragma config(Sensor, in1,    liftL,          sensorNone)
 #pragma config(Sensor, in2,    gyro,           sensorGyro)
 #pragma config(Sensor, in3,    liftR,          sensorPotentiometer)
 #pragma config(Sensor, in4,    manipulator,    sensorPotentiometer)
@@ -42,15 +44,15 @@ Constant Mapping:
 2 - Lift
 3 - Manipulator
 */
-float kP[4] = {0,0,0,0};
-float kI[4] = {0,0,0,0};
-float kD[4] = {0,0,0,0};
+float kP[4] = {0.5,0.36,0.6,0.3};
+float kI[4] = {0,0.0007,0,0};
+float kD[4] = {0,0.8,0,0.4};
 
 
 void straighten(int target){
 	error[2] = target - SensorValue(gyro);
 	I[2] += error[2];
-	if(error[2] > 50 || abs(error[2]) > 10){
+	if(error[2] > 50 || abs(error[2]) < 5){
 		I[2]  = 0;
 	}
 	motor[driveL] += -(error[2] * kP[1] + I[2] * kI[1] + (error[2] - pError[2]) * kD[1]);
@@ -79,19 +81,19 @@ void pd_base(int target, int degrees10){
 void pid_turn(int target){
 	error[2] = target - SensorValue(gyro);
 	I[2] += error[2];
-	if(error[2] > 35 || abs(error[2]) == 0){
+	if(abs(error[2]) == 0){
 		I[2]  = 0;
 	}
 	motor[driveL] = -(error[2] * kP[1] + I[2] * kI[1] + (error[2] - pError[2]) * kD[1]);
-	motor[driveR] = error[2] * kP[1] * kP[1] + I[2] * kI[1] + + (error[2] - pError[2]) * kD[1];
+	motor[driveR] = error[2] * kP[1] + I[2] * kI[1] + + (error[2] - pError[2]) * kD[1];
 	pError[2] = error[2];
 }
 
 
 
 void pid_lift(int targetL, int targetR){
-	error[3] = SensorValue[liftL]- targetL;
-	error[4] = SensorValue[liftR]- targetR;
+	error[3] = targetL - SensorValue[liftL];
+	error[4] = targetR - SensorValue[liftR];
 	I[3] += error[3];
 	if(abs(error[3]) > 200 || abs(error[3]) < 10){
 		I[3]  = 0;
@@ -114,17 +116,19 @@ void pid_manipulator(int target){
 	if(abs(error[5]) < 20){
 		I[5]  = 0;
 }
-	motor[manipulatorL] = error[5] *kP[3] + I[4] * kI[3] + (error[5] - pError[5]) * kD[3];
-	motor[manipulatorR] = error[5] *kP[3] + I[4] * kI[3] + (error[5] - pError[5]) * kD[3];
+	motor[manipulatorL] = error[5] *kP[3] + I[5] * kI[3] + (error[5] - pError[5]) * kD[3];
+	motor[manipulatorR] = error[5] *kP[3] + I[5] * kI[3] + (error[5] - pError[5]) * kD[3];
 	pError[5] = error[5];
 }
 
-void move(int target){
+void move(int target, int degrees){
 	SensorValue[L] = 0;
 	SensorValue[R] = 0;
+	i[0] = 0;
+	i[1] = 0;
+	i[2] = 0;
 	pError[0] = 0;
 	pError[1] = 0;
-	int degrees = SensorValue[in5]
 	while(abs(SensorValue(L) - target) > 30 && abs(SensorValue(R) - target) > 30){
 		pd_base(target, degrees);
 	}
@@ -133,41 +137,354 @@ void move(int target){
 }
 
 void turn(int degrees10){
-	if(SensorType[in5] != sensorGyro){
-		SensorType[in5] = sensorNone;
-		wait1Msec(1000);
-		SensorType[in5] = sensorGyro;
-		wait1Msec(2000);
-		}
-	while(abs(SensorValue(in5)) < degrees10){
-
+	while(abs(SensorValue(in2) - degrees10) > 50){
 		pid_turn(degrees10);
+		wait1Msec(20);
 	}
 }
 
 void lift_set(int targetL, int targetR){
+	I[3] = 0;
 	I[4] = 0;
-	while((Sensorvalue[liftR] - targetR) > 15){
-		pid_lift(targetL, targetR)
-		wait1Msec(25);
+	pError[3] = 0;
+	pError[4] = 0;
+	while(abs(Sensorvalue[liftR] - targetR) > 15){
+		pid_lift(targetL, targetR);
+		wait1Msec(20);
 	}
 }
 
 void manipulator_set(int target){
-	I[2] = 0;
-	while((Sensorvalue[manipulator] - target) > 15){
-		pid_manipulator(target)
-		wait1Msec(25);
+	I[5] = 0;
+	pError[5] = 0;
+	while(abs(Sensorvalue[manipulator] - target) > 15){
+		pid_manipulator(target);
+		wait1Msec(20);
 	}
+}
+void gyro_calibrate(){
+	SensorType[in2] = SensorNone;
+	SensorValue[in2]  = 0;
+	wait1Msec(250);
+	SensorType[in2] = SensorGyro;
+	SensorValue[in2]  = 0;
+	wait1Msec(2000);
+}
+
+bool far_zone = true;
+
+bool enabled = false;
+
+bool right = false;
+task lcd(){
+	/*
+	while(nLCDButtons == 0 || nLCDButtons == 2){
+		displayLCDCenteredString(0, "Auton?");
+		displayLCDCenteredString(1, "Enable         Disable");
+	}
+	if(nLCDButtons == 1){
+		enabled = true;
+		displayLCDCenteredString(1, "Auton enabled");
+		}
+	else if(nLCDButtons == 4){
+		enabled = false;
+		displayLCDCenteredString(1, "Auton Disabled");
+		return;
+		}
+	wait1Msec(500);
+	*/
+	clearLCDLine(0);
+	clearLCDLine(1);
+	while(nLCDButtons == 0 || nLCDButtons == 2){
+		displayLCDCenteredString(0, "Side?");
+		displayLCDCenteredString(1, "Left            Right");
+	}
+	if(nLCDButtons == 1){
+		right = false;
+		displayLCDCenteredString(1, "Left Selected");
+		}
+	else if(nLCDButtons == 4){
+		right = true;
+		displayLCDCenteredString(1, "Right Selected");
+		}
+	wait1Msec(500);
+	/*
+	while(nLCDButtons == 0 || nLCDButtons == 2){
+		displayLCDCenteredString(0, "Mode?");
+		displayLCDCenteredString(1, "Far            Stat");
+	}
+	if(nLCDButtons == 1){
+		far_zone = true;
+		displayLCDCenteredString(1, "Far Selected");
+		}
+	else if(nLCDButtons == 4){
+		far_zone = false;
+		displayLCDCenteredString(1, "Stationary Selected");
+		}
+		*/
 }
 void pre_auton()
 {
+	//PlaySoundFile("Windows XP Startup.wav");
   bStopTasksBetweenModes = true;
+  gyro_calibrate();
+  startTask(lcd);
 }
 
+
+task deploy(){
+	motor[rollers] = 127;
+	wait1Msec(250);
+	motor[rollers] = 30;
+	motor[manipulatorL] = 127;
+	motor[manipulatorR] = 127;
+	wait1Msec(600);
+	motor[manipulatorL] = 0;
+ 	motor[manipulatorR]  = 0;
+}
+
+int holdL, holdR;
+task lift_hold(){
+	I[3] = 0;
+	I[4] = 0;
+	while(true){
+	pid_lift(holdL, holdR);
+	}
+}
+task stack3(){
+}
+task crawl(){
+	move(175,0);
+}
+task mogo_down(){
+	motor[mogo] = 127;
+	wait1Msec(1000);
+	motor[mogo] = 10;
+}
+void stat_5pt_right(){
+	SensorValue[L] = 0;
+	SensorValue[R] = 0;
+	SensorValue[Gyro] = 0;
+	holdL = 2650;
+	holdR = 2650;
+	startTask(lift_hold);
+	startTask(deploy);
+	wait1Msec(250);
+	move(215,0 );
+	holdL = 2150;
+	holdR = 2150;
+	wait1Msec(1000);
+	motor[rollers] = -127;
+	wait1Msec(250);
+	holdL = 2550;
+	holdR = 2550;
+	wait1Msec(250);
+	move(-210,-0);
+	turn(-900);
+	startTask(mogo_down);
+	wait1Msec(500);
+	SensorValue[gyro] = 0;
+  move(900,0);
+  motor[mogo] = -127;
+  wait1Msec(2000);
+  motor[mogo] = -20;
+  motor[manipulatorL] = 0;
+  motor[manipulatorL] = 0;
+  move(-500,-900);
+	SensorValue[gyro] = 0;
+  turn(1800);
+  startTask(mogo_down);
+  wait1Msec(2500);
+  motor[driveL] = 127;
+ 	motor[driveR] = 127;
+ 	wait1Msec(500);
+ 	motor[driveL] = -127;
+ 	motor[driveR] = -127;
+ 	wait1Msec(1000);
+ 	motor[driveL] = 0;
+ 	motor[driveR] = 0;
+}
+void stat_5pt_left(){
+	SensorValue[L] = 0;
+	SensorValue[R] = 0;
+	SensorValue[Gyro] = 0;
+	holdL = 2650;
+	holdR = 2650;
+	startTask(lift_hold);
+	startTask(deploy);
+	wait1Msec(250);
+	move(225,0 );
+	holdL = 2150;
+	holdR = 2150;
+	wait1Msec(1000);
+	motor[rollers] = -127;
+	wait1Msec(250);
+	holdL = 2550;
+	holdR = 2550;
+	wait1Msec(250);
+	move(-210,0);
+	turn(-900);
+	motor[driveL] = -127;
+ 	motor[driveR] = -127;
+ 	wait1Msec(500);
+ 	motor[driveL] = 0;
+ 	motor[driveR] = 0;
+	/*
+	holdL = 1800;
+	holdR = 1800;
+	startTask(mogo_down);
+	wait1Msec(500);
+  move(900,900);
+  motor[mogo] = -127;
+  wait1Msec(2500);
+  motor[mogo] = -20;
+  motor[manipulatorL] = 0;
+  motor[manipulatorL] = 0;
+  SensorValue[gyro] = 0;
+  turn(450);
+  motor[driveL] = -127;
+ 	motor[driveR] = -127;
+ 	wait1Msec(700);
+ 	SensorValue[gyro] = 0;
+  turn(900);
+  startTask(mogo_down);
+  wait1Msec(1000);
+  motor[driveL] = 127;
+ 	motor[driveR] = 127;
+ 	wait1Msec(750);
+ 	motor[driveL] = -127;
+ 	motor[driveR] = -127;
+ 	wait1Msec(1000);
+ 	motor[driveL] = 0;
+ 	motor[driveR] = 0;
+ 	*/
+}
+
+void far_right(){
+		SensorValue[L] = 0;
+	SensorValue[R] = 0;
+	SensorValue[Gyro] = 0;
+	holdL = 2200;
+	holdR = 2200;
+	startTask(lift_hold);
+	wait1Msec(250);
+	startTask(deploy);
+	startTask(mogo_down);
+	wait1Msec(750);
+  move(850,0);
+  stopTask(lift_hold);
+  lift_set(1540,1580);
+  motor[rollers] = -127;
+  wait1Msec(250);
+  lift_set(2200, 2200);
+  startTask(lift_hold);
+  motor[mogo] = -127;
+  wait1Msec(2000);
+  motor[mogo] = -20;
+  motor[rollers] = 127;
+  motor[manipulatorL] = 0;
+  motor[manipulatorL] = 0;
+  startTask(lift_hold);
+  move(-800,0);
+  SensorValue[gyro] = 0;
+  turn(-300);
+  move(-550, -300);
+  SensorValue[gyro] = 0;
+  turn(-900);
+  SensorValue[gyro] = 0;
+  motor[driveL] = 127;
+  motor[driveR] = 127;
+  wait1Msec(750);
+  startTask(mogo_down);
+  wait1Msec(750);
+  motor[driveL] = 0;
+  motor[driveR] = 0;
+  wait1Msec(1000);
+  stopTask(mogo_down);
+  motor[mogo] = -127;
+  motor[driveL] = -127;
+  motor[driveR] = -127;
+  wait1Msec(1500);
+  motor[driveL] = 0;
+  motor[driveR] = 0;
+  motor[mogo] = 0;
+}
+
+void far_left(){
+	SensorValue[L] = 0;
+	SensorValue[R] = 0;
+	SensorValue[Gyro] = 0;
+	holdL = 2200;
+	holdR = 2200;
+	startTask(lift_hold);
+	wait1Msec(250);
+	startTask(deploy);
+	startTask(mogo_down);
+	wait1Msec(750);
+  move(850,0);
+  stopTask(lift_hold);
+  lift_set(1540,1580);
+  motor[rollers] = -127;
+  wait1Msec(250);
+  lift_set(2200, 2200);
+  startTask(lift_hold);
+  motor[mogo] = -127;
+  wait1Msec(2000);
+  motor[mogo] = -20;
+  motor[rollers] = 127;
+  motor[manipulatorL] = 0;
+  motor[manipulatorL] = 0;
+  startTask(lift_hold);
+  move(-800,0);
+  SensorValue[gyro] = 0;
+  turn(300);
+  move(-550, 300);
+  SensorValue[gyro] = 0;
+  turn(900);
+  SensorValue[gyro] = 0;
+  motor[driveL] = 127;
+  motor[driveR] = 127;
+  wait1Msec(750);
+  startTask(mogo_down);
+  wait1Msec(750);
+  motor[driveL] = 0;
+  motor[driveR] = 0;
+  wait1Msec(1000);
+  stopTask(mogo_down);
+  motor[mogo] = -127;
+  motor[driveL] = -127;
+  motor[driveR] = -127;
+  wait1Msec(1500);
+  motor[driveL] = 0;
+  motor[driveR] = 0;
+  motor[mogo] = 0;
+}
 task autonomous()
 {
-  AutonomousCodePlaceholderForTesting();
+	if(right){
+		stat_5pt_right();
+	}
+	else{
+		stat_5pt_left();
+	}
+	/*
+	if(!enabled){
+		return;
+	}
+	else if(far_zone && right){
+		far_right();
+	}
+	else if(far_zone && !right){
+		far_left();
+	}
+	else if(!far_zone && right){
+		stat_5pt_right();
+}
+
+	else if(!far_zone && !right){
+		stat_5pt_left();
+	}
+	*/
 }
 
 const unsigned short trueSpeed[128] =
@@ -213,7 +530,8 @@ int manipulator_target;
 //Equation that constantly converts current lift value to potentiometer target for four bar
 task lift_to_manipulator(){
 	while(true){
-		manipulator_target = SensorValue(L);
+		manipulator_target = -0.0000004* pow(SensorValue(liftL), 3) + 0.00283 +pow(SensorValue(liftL), 2) + -6.402 * SensorValue(liftL) + 6884.13;
+		//if(manipulator_target <
 		wait1Msec(20);
 	}
 }
@@ -226,26 +544,52 @@ task lift_control(){
 		motor[liftL2] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
 		motor[liftR1] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
 		motor[liftR2] = (vexRT[Btn6U] * 127) + (vexRT[Btn6D] * -127);
-		if(vexRT[Ch2] > 10){
+		if(abs(vexRT[Ch2]) > 20){
 			speedManipulator= vexRT[Ch2];
 			manipulator_speed();
 		}
-		else if(vexRT[Btn8D]){
-			pid_manipulator(manipulator_target);
+		else if(vexRT[Btn8R]){
+			if(SensorValue{liftL] < 1750){
+				pid_manipulator(2390);
+			}
+			else{
+				pid_manipulator(3630);
+			}
+			wait1Msec(20);
 		}
-		motor[rollers] = (vexRT[Btn7U] * 127) + (vexRT[Btn7D] * -157) + 30;
+		else if(vexRT[Btn8D]){
+			pid_manipulator(4000);
+			wait1Msec(20);
+		}
+		else{
+			motor[manipulatorL] = 0;
+			motor[manipulatorR] = 0;
+		}
+		motor[rollers] = (vexRT[Btn5D] * 127) + (vexRT[Btn5U] * -157) + 30;
 	}
 	}
 
-
+task aut(){
+	while(true)
+	{
+		motor[mogo] = (vexRT[Btn7U] * 137) + (vexRT[Btn7D] * -117) - 10;
+		speedLeft = vexRT[Ch3] + vexRT[Ch4];
+		speedRight = vexRT[Ch3] -  vexRT[Ch4];
+		driveSpeed();
+  }
+}
+task partner(){
+	while (true)
+  {
+		motor[mogo] = (vexRT[Btn5UXmtr2] * 142) + (vexRT[Btn5DXmtr2] * -127) - 15;
+		speedLeft = vexRT[Ch3Xmtr2] + (vexRT[Ch1Xmtr2]+vexRT[Ch4Xmtr2]);
+		speedRight = vexRT[Ch3Xmtr2] -  (vexRT[Ch1Xmtr2]+vexRT[Ch4Xmtr2]);
+		driveSpeed();
+  }
+}
 task usercontrol()
 {
 	startTask(lift_control);
-  while (true)
-  {
-		motor[mogo] = (vexRT[Btn5UXmtr2] * 147) + (vexRT[Btn5DXmtr2] * -127) - 20;
-		speedLeft = vexRT[Ch3Xmtr2] + vexRT[Ch4Xmtr2];
-		speedRight = vexRT[Ch3Xmtr2] -  vexRT[Ch4Xmtr2];
-		driveSpeed();
-  }
+	startTask(partner);
+
 }
