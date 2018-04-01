@@ -553,7 +553,7 @@ task lift_control(){
 				pid_manipulator(2390);
 			}
 			else{
-				pid_manipulator(3630);
+				pid_manipulator(3300);
 			}
 			wait1Msec(20);
 		}
@@ -590,6 +590,6 @@ task partner(){
 task usercontrol()
 {
 	startTask(lift_control);
-	startTask(partner);
+	startTask(aut);
 
 }
