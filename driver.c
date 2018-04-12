@@ -35,11 +35,9 @@ const unsigned short trueSpeed[128] =
 };
 
 //LINEAR DRIVE VARIABLES
-int threshold = 10;
 int speedLeft;
 int speedRight;
-string rightDrive= "rightDrive";
-string leftDrive = "leftDrive";
+
 
 void driveL(int speed){
 	motor[baseLfront] = speed;
@@ -120,8 +118,14 @@ void setSpeed(){
 task partner(){
 	while(true){
 		speedLeft = vexRT[Ch3Xmtr2] + vexRT[Ch4Xmtr2];
+
 		speedRight = vexRT[Ch3Xmtr2] -  vexRT[Ch4Xmtr2];
+		if(abs(speedLeft)<20){
+			speedLeft = 0;
+			speedRight = 0;
+		}
 		setSpeed();
+		motor[mogo] = (vexRT(Btn6UXmtr2)*137) - (vexRT[Btn6DXmtr2]*127) + 10;
 	}
 }
 task solo(){
@@ -129,6 +133,7 @@ task solo(){
 		speedLeft = vexRT[Ch3] + vexRT[Ch4];
 		speedRight = vexRT[Ch3] -  vexRT[Ch4];
 		setSpeed();
+		motor[mogo] = (vexRT(Btn7U)*137) - (vexRT[Btn7D]*127) + 10;
 	}
 }
 void autostack(){
@@ -153,7 +158,7 @@ void autostack(){
 }
 task main()
 {
-	startTask(partner);
+	startTask(solo);
 	while(true)
 	{
 		motor[rollers] = (vexRT[Btn5U]*127) - (vexRT[Btn5D]*127) - 30;
@@ -183,8 +188,6 @@ task main()
 		else{
 			translational(0);
 		}
-
-		motor[mogo] = (vexRT(Btn7U)*127) - (vexRT[Btn7D]*127);
 
 		motor[liftL] = (vexRT(Btn6U)*127) - (vexRT[Btn6D]*127);
 		motor[liftR] = (vexRT(Btn6U)*127) - (vexRT[Btn6D]*127);;

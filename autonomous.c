@@ -100,7 +100,7 @@ void pTurn(int sp){
 
 
   while(1){
-    int sv = SensorValue[gyro]; // get sensor
+    int sv = SensorValue[gyro];
 
     //calculate speed
     int error = sp-sv;
@@ -253,8 +253,8 @@ task main()
 	drive(-50);
 	wait1Msec(250);
 	startTask(mogo_up);
-	 drive(-127);
-	 wait1Msec(750);
-	 drive(0);
+	drive(-127);
+	wait1Msec(750);
+	drive(0);
 
 }
